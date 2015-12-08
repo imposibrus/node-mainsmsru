@@ -1,36 +1,44 @@
 'use strict';
-var API_KEY = undefined, URL_BASE = 'http://mainsms.ru/api/mainsms',
+var API_KEY = undefined, URL_BASE = '/api/mainsms',
     crypto = require('crypto'),
     http = require('http');
 
 // tools, mainsms.ru/home/api
 
-  function getUrlParams (options) {
-    var signature = '', params = '',
-        keys = Object.keys(options).sort(),
-        i, imax = keys.length, key, value;
+var genSignature = function(options) {
+  var signature = '',
+      keys = Object.keys(options).sort(),
+      i, imax = keys.length, key, value;
 
-    for (i = 0; i < imax; i++) {
-      key = keys[i];
-      value = options[key];
-      if (value || value === '' || value === 0) {
-        signature += value + ';';
-        params += key + '=' + value + '&';
-      }
+  for (i = 0; i < imax; i++) {
+    key = keys[i];
+    value = options[key];
+    if (value || value === '' || value === 0) {
+      signature += value + ';';
     }
-
-    signature += API_KEY;
-    signature = crypto.createHash('sha1').update(signature).digest('hex');
-    signature = crypto.createHash('md5').update(signature).digest('hex');
-
-    params += 'sign=' + signature;
-    return params;
   }
 
-  function sendRequest (url_base, options, callback) {
-    var url = url_base + '?' + getUrlParams(options);
-    http
-      .get(url, function (res) {
+  signature += API_KEY;
+  signature = crypto.createHash('sha1').update(signature).digest('hex');
+  signature = crypto.createHash('md5').update(signature).digest('hex');
+
+  return signature;
+};
+
+function sendRequest (url_base, options, callback) {
+  var postData = options;
+  postData.sign = genSignature(options);
+  postData = require('querystring').stringify(postData);
+
+  var request = http.request({
+        method: 'POST',
+        hostname: 'mainsms.ru',
+        path: url_base,
+        headers: {
+          'Content-Length': postData.length,
+          'Content-type': 'application/x-www-form-urlencoded'
+        }
+      }, function (res) {
         var body = '';
 
         // http error
@@ -45,7 +53,8 @@ var API_KEY = undefined, URL_BASE = 'http://mainsms.ru/api/mainsms',
           res.on('data', function (chunk) { body += chunk; });
           res.on('end', function () {
 
-            // parse response
+          // parse response
+          try {
             body = JSON.parse(body);
 
             // mainsms ok
@@ -63,10 +72,17 @@ var API_KEY = undefined, URL_BASE = 'http://mainsms.ru/api/mainsms',
 
             // mainsms unknown error
             else callback({
-              code: 0,
-              message: 'MAINSMS ERROR: unknown error'
+                code: 0,
+                message: 'MAINSMS ERROR: unknown error'
+              });
+          } catch(err) {
+            console.log(err);
+            callback({
+              code: res.statusCode,
+              message: 'HTTP ERROR: bad response code'
             });
-          });
+          }
+        });
         }
       })
 
@@ -77,7 +93,10 @@ var API_KEY = undefined, URL_BASE = 'http://mainsms.ru/api/mainsms',
           message: 'REQUEST ERROR: ' + err.message
         });
       });
-  }
+
+  request.write(postData);
+  request.end();
+}
 
 // message, mainsms.ru/home/mainapi
 
